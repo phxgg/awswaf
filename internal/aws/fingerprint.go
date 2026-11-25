@@ -1,29 +1,24 @@
 package aws
 
 import (
+	_ "embed"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"github.com/google/uuid"
 	"hash/crc32"
 	"math/rand"
-	"os"
 	"strings"
 	"time"
 )
 
+//go:embed webgl.json
+var webglJSON []byte
+
 var gpus []GPUInfo
 
 func init() {
-	file, err := os.Open("webgl.json")
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-	
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&gpus)
-	if err != nil {
+	if err := json.Unmarshal(webglJSON, &gpus); err != nil {
 		panic(err)
 	}
 }

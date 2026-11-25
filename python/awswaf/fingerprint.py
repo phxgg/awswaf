@@ -3,6 +3,7 @@ import random
 import time
 import uuid
 import zlib
+from pathlib import Path
 from awswaf.crypto import encrypt
 
 
@@ -13,7 +14,7 @@ def encode_with_crc(obj):
     checksum = hex_crc.encode('ascii').upper()
     return checksum, checksum + b"#" + payload
 
-gpus = json.load(open("../webgl.json"))
+gpus = json.load(open(Path(__file__).resolve().parents[2] / "internal" / "aws" / "webgl.json"))
 
 def get_fp(user_agent: str):
     ts = int(time.time() * 1000)
