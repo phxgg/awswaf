@@ -1,11 +1,13 @@
 package aws
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/bogdanfinn/tls-client/profiles"
 	"log"
 	"math/rand"
+	"mime/multipart"
 	"strings"
 	
 	http "github.com/bogdanfinn/fhttp"
@@ -222,15 +224,33 @@ func (a *Waf) BuildPayload(inputs Inputs) (*Verify, error) {
 	}, nil
 }
 
-func (a *Waf) Verify(payload *Verify) (string, error) {
-	url := fmt.Sprintf("https://%s/verify", a.Host)
-	
+func (a *Waf) Verify(payload *Verify, challengeType string) (string, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
-	
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(data)))
+
+	endpoint, contentType := "verify", "text/plain;charset=UTF-8"
+	if challengeType == MpVerifyType {
+		// mp_verify: solution moves out of the JSON (sent as null) into its own multipart field
+		var meta map[string]json.RawMessage
+		if err := json.Unmarshal(data, &meta); err != nil {
+			return "", err
+		}
+		meta["solution"] = json.RawMessage("null")
+		if data, err = json.Marshal(meta); err != nil {
+			return "", err
+		}
+		var buf bytes.Buffer
+		w := multipart.NewWriter(&buf)
+		w.WriteField("solution_metadata", string(data))
+		w.WriteField("solution_data", payload.Solution)
+		w.Close()
+		endpoint, contentType, data = "mp_verify", w.FormDataContentType(), buf.Bytes()
+	}
+	url := fmt.Sprintf("https://%s/%s", a.Host, endpoint)
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
 		log.Println(err)
 		return "", err
@@ -240,7 +260,7 @@ func (a *Waf) Verify(payload *Verify) (string, error) {
 		"accept-encoding": {"gzip, deflate, br, zstd"},
 		"connection":      {"keep-alive"},
 		"accept-language": {"en-US,en;q=0.9"},
-		"content-type":    {"text/plain;charset=UTF-8"},
+		"content-type":    {contentType},
 		"priority":        {"u=1, i"},
 		//"sec-ch-ua":          {`"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"`},
 		"sec-ch-ua-mobile":   {"?0"},
@@ -293,5 +313,5 @@ func (a *Waf) Run() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return a.Verify(payload)
+	return a.Verify(payload, inputs.ChallengeType)
 }

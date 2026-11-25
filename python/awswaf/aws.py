@@ -1,7 +1,7 @@
-import random, json
+import random, json, secrets
 
 from curl_cffi import requests
-from awswaf.verify import CHALLENGE_TYPES
+from awswaf.verify import CHALLENGE_TYPES, MP_VERIFY_TYPE
 from awswaf.fingerprint import get_fp
 
 
@@ -173,7 +173,7 @@ class AwsWaf:
             #"goku_props": self.goku_props,
         }
 
-    def verify(self, payload):
+    def verify(self, payload, challenge_type=None):
         self.session.headers = {
             "connection": "keep-alive",
             "sec-ch-ua-platform": "\"Windows\"",
@@ -190,12 +190,24 @@ class AwsWaf:
             "accept-encoding": "gzip, deflate, br, zstd",
             "accept-language": "en-US,en;q=0.9"
         }
-        res = self.session.post(
-            f"https://{self.endpoint}/verify",
-            json=payload).json()
+        if challenge_type == MP_VERIFY_TYPE:
+            # mp_verify: solution moves out of the JSON (sent as null) into its own multipart field
+            boundary = "----WebKitFormBoundary" + secrets.token_hex(8)
+            fields = {
+                "solution_metadata": json.dumps({**payload, "solution": None}, separators=(",", ":")),
+                "solution_data": payload["solution"],
+            }
+            body = "".join(
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'
+                for k, v in fields.items()
+            ) + f"--{boundary}--\r\n"
+            self.session.headers["content-type"] = f"multipart/form-data; boundary={boundary}"
+            res = self.session.post(f"https://{self.endpoint}/mp_verify", data=body).json()
+        else:
+            res = self.session.post(f"https://{self.endpoint}/verify", json=payload).json()
         return res["token"]
 
     def __call__(self):
         inputs = self.get_inputs()
         payload = self.build_payload(inputs)
-        return self.verify(payload)
+        return self.verify(payload, inputs["challenge_type"])

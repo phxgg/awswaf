@@ -5,3 +5,5 @@ proxies.txt
 in.js
 out.js
 .idea
+*.exe
+cmd
